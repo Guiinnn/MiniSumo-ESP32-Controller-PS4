@@ -23,7 +23,7 @@ void onConnectedController(ControllerPtr ctl) {
     hasParedController = true;  // Marca que agora tem um pareado
     lastInputTime = millis();   // Reseta o timer de inatividade
     Serial.printf("✓ Controle pareado! Modelo: %s\n", ctl->getModelName().c_str());
-    Serial.println("⚠ Novo controle não será aceito até reboot!");
+    Serial.println("⚠ Apenas 1 controle aceito por vez. Desconecte para trocar.");
   } else if (myController != nullptr && myController != ctl) {
     // Rejeita tentativa de conexão de outro controle
     Serial.println("✗ NEGADO: Outro controle tentou conectar!");
@@ -34,9 +34,9 @@ void onConnectedController(ControllerPtr ctl) {
 void onDisconnectedController(ControllerPtr ctl) {
   if (myController == ctl) {
     myController = nullptr;
-    isLocked = false;  // Reset trava ao desconectar
-    Serial.println("⚠ Controle desconectado!");
-    // Reseta inatividade se desconectar
+    hasParedController = false;  // Permite reconexão do controle
+    isLocked = false;             // Reset trava ao desconectar
+    Serial.println("⚠ Controle desconectado! Aguardando reconexão...");
     lastInputTime = millis();
   }
 }
@@ -71,6 +71,7 @@ void setup() {
   MotorEsquerdo.write(90);  // Posição neutra
   MotorDireito.write(90);
 
+  lastInputTime = millis();  // Inicializa timer de inatividade corretamente
   Serial.println("Sistema pronto!");
 }
 
@@ -86,8 +87,10 @@ void loop() {
         Serial.println("\n✓ BLUETOOTH ATIVADO - Pressione PS4");
         Serial.println("  (Timeout: 5 minutos de inatividade)");
       } else {
+        if (myController != nullptr) myController->disconnect();  // Fecha BT de verdade
         myController = nullptr;
-        isLocked = false;  // Reset trava ao desativar Bluetooth
+        hasParedController = false;  // Permite reconexão ao reativar Bluetooth
+        isLocked = false;             // Reset trava ao desativar Bluetooth
         MotorEsquerdo.write(90);
         MotorDireito.write(90);
         Serial.println("\n✗ BLUETOOTH DESATIVADO - Motores parados");
@@ -95,13 +98,13 @@ void loop() {
     }
   }
 
-  // Se Bluetooth desabilitado, não faz nada
+  BP32.update();  // Sempre atualiza para manter estado interno consistente
+
+  // Se Bluetooth desabilitado, não processa inputs
   if (!bluetoothEnabled) {
     delay(50);
     return;
   }
-
-  BP32.update();
 
   // Proteção por inatividade - desconecta e para após timeout
   if (myController && myController->isConnected()) {
@@ -109,7 +112,9 @@ void loop() {
       Serial.println("\n⚠ TIMEOUT! Sem input por 5 minutos.");
       Serial.println("  Desconectando por segurança...");
       bluetoothEnabled = false;
+      myController->disconnect();   // Desconecta de verdade via Bluetooth
       myController = nullptr;
+      hasParedController = false;  // Permite reconexão após timeout
       MotorEsquerdo.write(90);
       MotorDireito.write(90);
       delay(50);
@@ -143,16 +148,13 @@ void loop() {
     int LStickX = myController->axisX();  // -511 a 512
     int LStickY = myController->axisY();  // -511 a 512
 
-    // Mapear valores de -511 a 512 para 0 a 180
-    int leftMotorOutput = constrain(
-      map(LStickX, -511, 512, 0, 180) + map(LStickY, -511, 512, 0, 180),
-      0, 180
-    );
+    // Mistura diferencial em valores raw
+    int leftRaw  = LStickY - LStickX;
+    int rightRaw = LStickY + LStickX;
 
-    int rightMotorOutput = constrain(
-      map(LStickX, -511, 512, 0, 180) - map(LStickY, -511, 512, 0, 180),
-      0, 180
-    );
+    // Mapear para 0~180 (neutro = 90)
+    int leftMotorOutput  = constrain(map(leftRaw,  -1024, 1024, 0, 180), 0, 180);
+    int rightMotorOutput = constrain(map(rightRaw, -1024, 1024, 0, 180), 0, 180);
 
     // Aplicar zona morta (deadzone)
     if (leftMotorOutput > 95 || leftMotorOutput < 85) {
