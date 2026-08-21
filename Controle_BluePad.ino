@@ -2,17 +2,19 @@
 
 // PINOS DO TB6612FNG
 // Motor A = Motor Esquerdo | Motor B = Motor Direito
-#define AIN1 27   // Direção motor esquerdo (A)
-#define AIN2 14   // Direção motor esquerdo (A)
-#define PWMA 25   // PWM (velocidade) motor esquerdo (A)
+#define AIN1 25   // Direção motor esquerdo (A)
+#define AIN2 33   // Direção motor esquerdo (A)
+#define PWMA 32   // PWM (velocidade) motor esquerdo (A)
 
-#define BIN1 32   // Direção motor direito (B)
-#define BIN2 33   // Direção motor direito (B)
-#define PWMB 26   // PWM (velocidade) motor direito (B)
+#define BIN1 27   // Direção motor direito (B)
+#define BIN2 14   // Direção motor direito (B)
+#define PWMB 12   // PWM (velocidade) motor direito (B)
+//GPIO12 é um pino strpping  (caso não funcionar me avsa que mudo)
 
-#define STBY 13   // Standby do driver (precisa ficar HIGH pra ligar)
+#define STBY 26   // Standby do driver (precisa ficar HIGH pra ligar)
 
 #define BUTTON_PIN 34  // Botão para ativar/desativar Bluetooth (GPIO34)
+//GPIO34 é input-only (caso caso não funcionar só me avisar que troco)
 #define INACTIVITY_TIMEOUT 300000  // 5 minutos sem input antes de desconectar
 
 // Canais PWM (LEDC) do ESP32
@@ -24,8 +26,8 @@
 ControllerPtr myController = nullptr;
 bool bluetoothEnabled = false;
 unsigned long lastInputTime = 0;
-bool hasParedController = false;
-bool isLocked = false;
+bool controlePareado = false;
+bool fechado = false;
 unsigned long lastR1Press = 0;
 
 // FUNÇÃO DE CONTROLE DO MOTOR
@@ -54,9 +56,9 @@ void stopMotors() {
 
 // CALLBACKS BLUEPAD32
 void onConnectedController(ControllerPtr ctl) {
-  if (myController == nullptr && hasParedController == false) {
+  if (myController == nullptr && controlePareado == false) {
     myController = ctl;
-    hasParedController = true;
+    controlePareado = true;
     lastInputTime = millis();
     Serial.printf("Controle pareado! Modelo: %s\n", ctl->getModelName().c_str());
     Serial.println("Apenas 1 controle aceito por vez. Desconecte para trocar.");
@@ -69,8 +71,8 @@ void onConnectedController(ControllerPtr ctl) {
 void onDisconnectedController(ControllerPtr ctl) {
   if (myController == ctl) {
     myController = nullptr;
-    hasParedController = false;
-    isLocked = false;
+    controlePareado = false;
+    fechado = false;
     Serial.println("Controle desconectado! Aguardando reconexão...");
     lastInputTime = millis();
   }
@@ -107,7 +109,7 @@ void setup() {
   ledcSetup(PWMB_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
   ledcAttachPin(PWMB, PWMB_CHANNEL);
 
-  digitalWrite(STBY, HIGH);  // Tira o driver do modo standby
+  digitalWrite(STBY, HIGH);  // Tira o driver do modo aguardando (standby)
   stopMotors();
 
   lastInputTime = millis();
@@ -127,8 +129,8 @@ void loop() {
       } else {
         if (myController != nullptr) myController->disconnect();
         myController = nullptr;
-        hasParedController = false;
-        isLocked = false;
+        controlePareado = false;
+        fechado = false;
         stopMotors();
         Serial.println("\nBLUETOOTH DESATIVADO - Motores parados");
       }
@@ -149,7 +151,7 @@ void loop() {
       bluetoothEnabled = false;
       myController->disconnect();
       myController = nullptr;
-      hasParedController = false;
+      controlePareado = false;
       stopMotors();
       delay(50);
       return;
@@ -157,10 +159,10 @@ void loop() {
 
     if (myController->r1()) {
       if (millis() - lastR1Press > 300) {
-        isLocked = !isLocked;
+        fechado = !fechado;
         lastR1Press = millis();
 
-        if (isLocked) {
+        if (fechado) {
           Serial.println("\nROBÔ TRAVADO - Pressione R1 para liberar!");
           stopMotors();
         } else {
@@ -170,7 +172,7 @@ void loop() {
       }
     }
 
-    if (isLocked) {
+    if (fechado) {
       delay(50);
       return;
     }
