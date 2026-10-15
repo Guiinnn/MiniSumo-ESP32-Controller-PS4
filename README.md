@@ -1,192 +1,114 @@
 # 🤖 Mini Sumo ESP32 + Controle PS4 via Bluepad32
 
-Este projeto controla dois motores de um robô mini sumô usando um controle PS4 conectado via Bluetooth ao ESP32. A lógica foi implementada em [Controle_BluePad/Controle_BluePad.ino](Controle_BluePad/Controle_BluePad.ino).
+Firmware de um robô mini sumô **rádio-controlado** (500 g, 10×10 cm). Um ESP32 recebe os comandos de um controle PS4 por Bluetooth, usando a biblioteca Bluepad32, e aciona dois motores N20 pelo driver TB6612FNG.
+
+> **Status:** código refatorado conforme o [plano](docs/PLANO.md). Falta a calibração na bancada ([CALIBRACAO.md](docs/CALIBRACAO.md)).
 
 ---
 
-## 📋 O que o código faz
+## 📚 Documentação
 
-- Conecta um controle PS4 usando Bluepad32
-- Lê o joystick esquerdo e calcula a movimentação dos motores
-- Controla o driver TB6612FNG com PWM
-- Possui trava de segurança com o botão R1
-- Desliga por segurança após 5 minutos sem input
-- Permite ligar/desligar o Bluetooth por um botão físico
-- Aceita apenas um controle por vez
-
----
-
-## 🔌 Pinagem atual do hardware
-
-| Função | GPIO | Observação |
-|--------|------|-----------|
-| AIN1 | 25 | Direção do motor esquerdo |
-| AIN2 | 33 | Direção do motor esquerdo |
-| PWMA | 32 | PWM do motor esquerdo |
-| BIN1 | 27 | Direção do motor direito |
-| BIN2 | 14 | Direção do motor direito |
-| PWMB | 12 | PWM do motor direito |
-| STBY | 26 | Standby do driver TB6612FNG |
-| BUTTON_PIN | 34 | Botão para ligar/desligar Bluetooth |
-
-> Atenção: o GPIO 12 é um pino de strapping em alguns módulos ESP32. Se o hardware não iniciar corretamente ou o PWM do motor direito não funcionar, troque esse pino por outro disponível e ajuste o código.
+| Documento | Conteúdo |
+|-----------|----------|
+| [docs/PLANO.md](docs/PLANO.md) | Decisões, comportamento detalhado, estrutura do código e correções |
+| [docs/ESTRUTURA-DO-CODIGO.md](docs/ESTRUTURA-DO-CODIGO.md) | Explicação simples de como o código está dividido e por quê |
+| [docs/SETUP-ARDUINO-IDE.md](docs/SETUP-ARDUINO-IDE.md) | Como instalar, compilar e gravar (**leia antes de compilar**) |
+| [docs/CALIBRACAO.md](docs/CALIBRACAO.md) | Roteiro de bancada para ajustar o `config.h` e checklist de segurança |
 
 ---
 
-## 🧠 Como o controle funciona
+## 🎮 Comandos
 
-A lógica de movimentação usa o eixo esquerdo do controle:
+| Comando | Função |
+|---------|--------|
+| **Analógico esquerdo** | Pilota (frente, ré e curva) |
+| **R1** | Trava / destrava o robô |
+| **△** | Sobe a marcha |
+| **✕** | Desce a marcha |
 
-- `axisY()` controla avanço e ré
-- `axisX()` controla direção esquerda/direita
-
-A mistura é feita assim:
-
-```cpp
-int leftRaw  = LStickY - LStickX;
-int rightRaw = LStickY + LStickX;
-```
-
-Depois disso, os valores são convertidos para a faixa de -255 a 255 e enviados ao driver TB6612FNG.
-
-A zona morta atual é:
-
-```cpp
-const int DEADZONE = 20;
-```
-
-Ou seja, pequenos movimentos próximos de zero são ignorados para evitar vibração do joystick mexendo o robô sem querer.
+| Marcha | Força máxima | Luz do controle |
+|--------|--------------|-----------------|
+| 1ª | 25% | 🔵 |
+| 2ª | 50% | 🟣 |
+| 3ª | 75% | 🟡 |
+| 4ª (inicial) | 100% | 🟢 |
+| Travado | — | 🔴 |
 
 ---
 
 ## 🔒 Segurança
 
-### Botão R1
-
-Quando o botão R1 é pressionado, o código alterna entre:
-
-- `fechado = true` → robô travado, motores desligados
-- `fechado = false` → robô liberado, joystick volta a funcionar
-
-### Timeout de inatividade
-
-Se o controle ficar sem movimento por 5 minutos, o código:
-
-1. para os motores
-2. desconecta o controle
-3. desativa o Bluetooth
+- O robô **sempre começa travado**, ao ligar e ao conectar o controle. Aperte **R1** para liberar.
+- Travado, o driver fica desligado (`STBY` em LOW).
+- Liberado e com o analógico solto, os motores **freiam**.
+- Se o controle desconectar, os motores param na hora.
+- Após **5 minutos** sem comandos, o robô trava (o controle continua conectado).
+- Só os **2 controles da equipe** podem conectar, identificados pelo MAC, um de cada vez.
 
 ---
 
-## 🛠️ Como configurar o Arduino IDE
+## 🔌 Pinagem
 
-Para funcionar corretamente, o pacote Bluepad32 precisa ser adicionado nas URLs extras do Arduino IDE.
+| Função | GPIO | Observação |
+|--------|------|------------|
+| AIN1 | 25 | Sentido do motor esquerdo |
+| AIN2 | 33 | Sentido do motor esquerdo |
+| PWMA | 32 | PWM do motor esquerdo |
+| BIN1 | 27 | Sentido do motor direito |
+| BIN2 | 14 | Sentido do motor direito |
+| PWMB | 12 | PWM do motor direito ⚠️ |
+| STBY | 26 | Habilita o driver TB6612FNG |
+| BOTAO | 34 | Botão físico (desativado por padrão) ⚠️ |
 
-### 1) Adicionar a URL do pacote Bluepad32
+### ⚠️ Avisos de hardware
 
-No Arduino IDE:
+- **GPIO12** é pino de *strapping*: se estiver em HIGH durante o boot, o ESP32 pode não iniciar ou falhar na gravação. Se acontecer, desconecte o fio do GPIO12 para gravar.
+- **GPIO34** não tem pull-up interno. O botão só funciona com resistor de pull-up externo; por isso fica desativado no `config.h` (`BOTAO_ATIVO = false`).
 
-- Arquivo → Preferências
-- Em "URLs adicionais do Gerenciador de placas", adicione:
+Mais detalhes em [PLANO.md](docs/PLANO.md#8-avisos-de-hardware-fora-do-escopo).
+
+---
+
+## 🧩 Hardware
+
+- 1× ESP32
+- 1× Driver TB6612FNG
+- 2× Motores N20 de 256 rpm
+- 1× Bateria 2S
+- 1× Botão
+- 1× Controle PS4 (+ 1 reserva)
+
+---
+
+## 📁 Estrutura
 
 ```text
-https://raw.githubusercontent.com/ricardoquesada/esp32-arduino-lib-builder/master/bluepad32_files/package_esp32_bluepad32_index.json
+Controle_BluePad/
+├── Controle_BluePad.ino   setup() e loop()
+├── config.h               pinos, MACs, marchas e ajustes (o único arquivo a editar na calibração)
+├── motores.h / .cpp       driver TB6612FNG
+├── controle.h / .cpp      controle PS4 via Bluepad32
+└── seguranca.h / .cpp     trava, timeout e botão físico
 ```
 
-### 2) Instalar o pacote
-
-- Ferramentas → Placa → Gerenciador de placas...
-- Procure por: `esp32 Bluepad32` ou `ESP32 Bluepad32`
-- Instale o pacote correspondente
-
-### 3) Selecionar a placa
-
-- Ferramentas → Placa → ESP32 Arduino → ESP32 Dev Module
-
-### 4) Instalar a biblioteca do código
-
-O exemplo usa `#include <Bluepad32.h>`, então a biblioteca Bluepad32 deve estar disponível após instalar o pacote do passo anterior.
+Explicação para quem não é da programação: [ESTRUTURA-DO-CODIGO.md](docs/ESTRUTURA-DO-CODIGO.md).
 
 ---
 
-## 🔧 Pinagem do motor e driver TB6612FNG
+## 🚀 Início rápido
 
-O código usa o driver TB6612FNG com o padrão:
-
-- `IN1/IN2` para direção
-- `PWM` para velocidade
-- `STBY` ligado em HIGH para ativar o driver
-
-Função usada:
-
-```cpp
-void driveMotor(int in1Pin, int in2Pin, int pwmChannel, int speed) {
-  speed = constrain(speed, -255, 255);
-
-  if (speed > 0) {
-    digitalWrite(in1Pin, HIGH);
-    digitalWrite(in2Pin, LOW);
-  } else if (speed < 0) {
-    digitalWrite(in1Pin, LOW);
-    digitalWrite(in2Pin, HIGH);
-  } else {
-    digitalWrite(in1Pin, LOW);
-    digitalWrite(in2Pin, LOW);
-  }
-
-  ledcWrite(pwmChannel, abs(speed));
-}
-```
+1. Configure a Arduino IDE: [SETUP-ARDUINO-IDE.md](docs/SETUP-ARDUINO-IDE.md). Use a placa **ESP32 Arduino + Bluepad32 → ESP32 Dev Module**, não a da Espressif.
+2. Grave o código com `CONTROLES_AUTORIZADOS` vazio e cadastre os controles.
+3. Calibre na bancada: [CALIBRACAO.md](docs/CALIBRACAO.md).
+4. Faça o checklist de segurança antes de usar o robô.
 
 ---
 
-## 🐛 Problemas comuns
+## 🤝 Contribuição
 
-### Controle não conecta
-- Verifique se o botão de ativação do Bluetooth foi pressionado.
-- Verifique se o pacote Bluepad32 foi corretamente instalado.
-- Confirme se a placa correta foi selecionada no Arduino IDE.
-
-### Motores não mexem
-- Verifique se `STBY` está em HIGH.
-- Verifique a alimentação do TB6612FNG.
-- Confira se os fios de direção e PWM estão corretos.
-- Veja se o joystick está fora da zona morta.
-
-### Robô trava sozinho
-- Pode estar em estado `fechado` depois do botão R1.
-- Pode ter ativado o timeout de 5 minutos sem input.
-
-### GPIO 12 não funciona
-- Troque o pino de `PWMB` para outro GPIO disponível.
-- Ajuste a definição no código e confirme o pino na placa.
+- Commits, push e PRs são feitos **manualmente** pela equipe, nunca de forma automática por ferramentas ou assistentes.
+- Ajustes de calibração vão no `config.h`.
 
 ---
 
-## 📁 Arquivos do projeto
-
-- [Controle_BluePad/Controle_BluePad.ino](Controle_BluePad/Controle_BluePad.ino) — código principal
-
----
-
-## 🔎 Resumo rápido
-
-```text
-ESP32 liga
-  ↓
-Configura pinos, PWM, serial e BT
-  ↓
-Botão físico liga/desliga Bluetooth
-  ↓
-Controle conectado?
-  ├── Não → motores parados
-  └── Sim → lê joystick e move robô
-      ↓
-      R1 → trava/destrava
-      ↓
-      Inatividade > 5 min → desconecta por segurança
-```
-
----
-
-Última revisão do README: 24/09/2026
+Última revisão do README: 13/10/2026
