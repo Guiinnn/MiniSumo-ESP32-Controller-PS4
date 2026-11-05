@@ -23,9 +23,6 @@ Problemas que só se resolvem no hardware aparecem como **avisos** na seção 8,
 
 ## 2. Regras de trabalho
 
-- **Sem git automático.** Nenhuma ferramenta ou assistente deve executar `git commit`, `git push`, criar branch ou abrir PR automaticamente. As alterações são feitas nos arquivos, e **o commit, o push e o PR são feitos manualmente pela equipe**, depois de revisar.
-- Fluxo sugerido (manual): trabalhar na branch `refatoracao-controle`, com commits pequenos por funcionalidade e PR para a `main`.
-- O documento de projeto da equipe (PDF) não é versionado (vai para o `.gitignore`).
 - Todo valor que pode precisar de ajuste fica no `config.h`, nunca espalhado pelo código.
 
 ---
