@@ -1,0 +1,7 @@
+# Documento de projeto interno da equipe (não versionado)
+*.pdf
+*.docx
+
+# Arduino / IDEs
+build/
+.vscode/
